@@ -1,329 +1,363 @@
 # promptimize roadmap
 
-This roadmap tracks what is still required before promptimize is launch-ready.
+This roadmap tracks shipped reality, immediate bottlenecks, and a prioritized backlog for launch + post-launch growth.
 
-Status labels:
+## Status legend
 
-- `BLOCKER` = must complete before launch
-- `HIGH` = should complete before launch unless explicitly deferred
-- `POST-LAUNCH` = valuable, but not required for first release
+- `SHIPPED` = implemented and in active use
+- `NEXT` = highest-priority near-term work (target pre-launch)
+- `HIGH` = pre-launch hardening unless explicitly deferred
+- `POST-LAUNCH` = valuable but not required for first release
+- `RESEARCH` = experiment tracks/hypotheses, not committed deliverables yet
 
 ---
 
-## Phase 0 — Launch blockers (`BLOCKER`)
+## 1) Current reality snapshot (accurate as of now)
 
-## 0.1 Wire real AI optimization path into main optimize pipeline *(complete)*
+### Core shipped capabilities (`SHIPPED`)
 
-**Why this is a blocker**
+- Optimize CLI works for file/directory discovery and output modes.
+- Optional OpenAI-compatible optimize path is wired with local fallback.
+- Provider reporting is included per-file and in aggregate output.
+- Timeout/retry policy is implemented for OpenAI-compatible calls.
+- Eval harness supports deterministic metrics + optional AI rubric judge.
+- Iterate Phase A+B is shipped:
+  - deterministic stratified train/hold-out split
+  - max-iter/plateau stopping
+  - AI candidate diversity control via iterate temperature
+  - per-file AI-call budget enforcement
+  - class-aware acceptance tuning
+  - append-only NDJSON iteration store
+  - structured iterate text/JSON reporting
+- Starter-set and larger curated AI iterate runs have already been executed.
 
-- Core wiring now exists: optimize `--ai` can call an OpenAI-compatible chat-completions endpoint.
-- Output now reports optimize provider usage (credentialed/local/fallback) per file and in totals.
-- OpenAI-compatible optimize/eval calls now use timeout + retry policy before local fallback.
+### Known hard truths (`SHIPPED` observations)
+
+- AI/model latency dominates runtime much more than local processing.
+- Token estimate still uses a coarse heuristic.
+- Some markdown serialization paths can still inflate tokens.
+- CI validates tests + eval JSON, but iterate validation remains incomplete.
+
+---
+
+## 2) Current bottlenecks (highest impact now)
+
+## 2.1 Throughput ceiling: file-level concurrency limits (`NEXT`)
+
+**Why it matters**
+
+- End-to-end throughput is currently limited by sequential/broadly conservative processing.
+- AI latency is dominant; without controlled parallelism, total run time scales poorly with corpus size.
 
 **Actionable tasks**
 
-- ✅ Add explicit provider selection/reporting in optimize output (`local` vs `credentialed`).
-- ✅ Add timeout + retry policy for credentialed provider.
-- ✅ Tune default OpenAI-compatible timeout/retry for local-model reliability (`45000ms`, `2` retries) while preserving fallback.
+- Add bounded file-level parallelism for optimize/eval/iterate execution.
+- Add concurrency caps by stage (optimize generation vs judge scoring).
+- Add provider-aware backpressure (respect retry pressure and timeout behavior).
+- Add deterministic ordering guarantees in reports/output paths.
 
 **Definition of done**
 
-- `promptimize --ai <path>` uses credentialed provider when key exists or when `PROMPTIMIZE_BASE_URL` is configured for local OpenAI-compatible servers.
-- On auth/network/model failure, run completes with local fallback.
-- Tests cover: credential success, base-url availability without key, runtime failure fallback.
+- Large corpus runtime improves materially without introducing nondeterministic report drift.
+- Defaults remain safe for local Qwen/OpenAI-compatible endpoints.
 
 ---
 
-## 0.2 Fix token inflation regressions from markdown serialization *(partially complete)*
+## 2.2 Signal stability and acceptance confidence (`NEXT`)
 
-**Why this is a blocker**
+**Why it matters**
 
-- Some fixtures show token growth after optimization due to AST stringify/reflow behavior.
-- This weakens trust in the “optimization” claim.
+- Iterate accept/reject decisions are only trustworthy when score variance is bounded.
+- Near-threshold decisions currently risk flip-flopping across repeated runs.
 
 **Actionable tasks**
 
-- ✅ Add targeted inflation regression coverage (`tests/engine.test.ts` quick-reference fixture).
-- ✅ Add local-rule inflation guard in optimize pipeline (revert to source when local candidate inflates token estimate).
-- ⏳ Add eval-side guardrail/reporting for “quality gain vs token increase” decisions (still open).
+- Add repeat-run variance checks on fixed starter corpus.
+- Report confidence bands/noise windows alongside rubric deltas.
+- Introduce explicit “indeterminate zone” handling near acceptance thresholds.
+- Add score drift alerts in iterate summary output.
 
 **Definition of done**
 
-- Known inflation fixtures no longer regress or are explicitly justified by quality gains.
-- Regression tests enforce no accidental inflation for baseline fixtures.
-- Eval output clearly separates acceptable quality-driven inflation from avoidable inflation.
+- Repeated runs on fixed corpus produce documented, bounded variance.
+- Threshold decisions are explainable with explicit signal/noise context.
 
 ---
 
-## 0.3 Repository hygiene baseline *(complete)*
+## 2.3 Eval baseline comparison maturity (`NEXT`)
 
-**Why this was a blocker**
+**Why it matters**
 
-- Missing explicit licensing blocked clean collaboration and distribution readiness.
+- Current summaries show deltas, but baseline comparison ergonomics are still thin.
+- Users need faster interpretation of “is this candidate actually better than baseline?”
 
 **Actionable tasks**
 
-- Initialize git repository if not already managed upstream.
-- Add `.gitignore` for Bun/TS outputs and local artifacts.
-- ✅ Add project license file.
+- Add explicit baseline-vs-candidate comparison blocks in eval/iterate JSON and text outputs.
+- Add class-level baseline trend summaries.
+- Add regression flags for retention drops despite rubric gains.
 
 **Definition of done**
 
-- ✅ Repo has version control metadata.
-- ✅ Build/test artifacts are ignored.
-- ✅ License is explicit and visible.
+- Eval/iterate outputs make baseline superiority/regression obvious without manual diffing.
 
 ---
 
-## 0.4 Remove or formalize unused build outputs *(complete)*
+## 2.4 Iterate validation in CI (`NEXT`)
 
-**Why this was a blocker**
+**Why it matters**
 
-- Output behavior and artifact expectations were ambiguous.
-- That ambiguity increased accidental clutter and user confusion.
+- Iterate behavior can regress even when tests + eval still pass.
 
 **Actionable tasks**
 
-- ✅ Audit generated outputs from optimize/eval workflows.
-- ✅ Document intentional artifacts and their purpose (`README.md`).
-- ✅ Formalize build artifact behavior:
-  - default `bun run build` is verification-only (`tsc --noEmit`)
-  - optional `bun run build:dist` emits `dist/` when explicitly needed
-  - generated optimize outputs (`*.optimized.md`, `*-optimized/`) and local artifacts stay ignored by default
+- Add iterate smoke CI job with bounded corpus + bounded iteration budget.
+- Validate iterate report schema + NDJSON store contract in CI.
+- Keep runtime bounded for PR cadence.
 
 **Definition of done**
 
-- ✅ All generated artifacts have a documented purpose.
-- ✅ No unexplained files appear during normal workflows.
+- CI fails on iterate contract regressions.
+- Iterate smoke remains fast and stable.
 
 ---
 
-## Phase 1 — Pre-launch hardening (`HIGH`)
+## 2.5 Error recovery and partial-run survivability (`NEXT`)
 
-## 1.1 Add linter + formatter and enforce in CI
+**Why it matters**
+
+- One failing file/provider path can still degrade full-run utility.
 
 **Actionable tasks**
 
-- Add lint and format tooling for TypeScript.
-- Add scripts (`lint`, `format:check`, optional `format`).
-- Gate PRs on lint/test/eval.
+- Add continue-on-error and strict failure-threshold modes.
+- Emit structured per-file failure records with stage/provider metadata.
+- Improve retry/fallback telemetry for post-run triage.
 
 **Definition of done**
 
-- CI fails on lint/format violations.
-- Local contributor workflow includes deterministic formatting.
+- Batch runs produce usable partial results plus clear error accounting.
 
 ---
 
-## 1.2 Expand test coverage where risk is highest
+## 2.6 Token estimator upgrade (`NEXT`)
 
-Current tests cover core paths but still miss key edge cases in CLI/discovery/metrics.
+**Why it matters**
+
+- `chars/4` makes optimization quality harder to judge precisely.
 
 **Actionable tasks**
 
-- CLI argument parsing: invalid/missing combinations, error messaging.
-- Discovery edge cases: symlink handling, non-markdown inputs, hidden path behavior.
-- Eval metrics correctness for retention/actionability edge cases.
-- Output path resolution for single vs multi-file and custom output dirs.
+- Implement model-aware tokenizer path with graceful fallback estimator.
+- Surface estimator source in optimize/eval/iterate reports.
+- Add estimator consistency tests against representative model tokenizers.
 
 **Definition of done**
 
-- New tests cover failure/edge paths, not just happy paths.
-- Coverage is sufficient to refactor parser/discovery/metrics safely.
+- Reported token deltas align more closely with real model tokenization behavior.
 
 ---
 
-## 1.3 Improve token estimation quality
+## 2.7 Config ergonomics + environment onboarding (`NEXT`)
+
+**Why it matters**
+
+- Reproducible project-level runs need config support and clearer env setup.
 
 **Actionable tasks**
 
-- Replace `chars / 4` heuristic with model-aware token counting strategy.
-- Keep a fallback estimator when tokenizer package is unavailable.
-- Surface estimator type in reports for transparency.
+- Add `promptimize.config.*` schema + discovery.
+- Add CLI override precedence rules.
+- Add `.env.example` with documented provider/eval/iterate knobs.
 
 **Definition of done**
 
-- Reported token deltas better align with real tokenizer output.
-- Docs explain estimator method and caveats.
+- Teams can run stable commands from config with minimal CLI boilerplate.
+- Environment setup is discoverable and low-friction.
 
 ---
 
-## 1.4 Add robust error recovery/reporting
+## 2.8 Utility dedup + internal architecture hygiene (`HIGH`)
+
+**Why it matters**
+
+- Shared logic around timing/reporting/errors/provider metadata can drift across optimize/eval/iterate paths.
 
 **Actionable tasks**
 
-- Support continue-on-error mode for batch runs.
-- Emit structured error report per file.
-- Return non-zero exit code only when failure threshold is exceeded or strict mode is enabled.
+- Consolidate duplicated helpers into shared internal utilities.
+- Normalize stage timing and provider event models.
+- Keep module boundaries small and single-responsibility.
 
 **Definition of done**
 
-- One bad file does not necessarily kill full corpus run.
-- Users can identify exactly which files failed and why.
+- Fewer duplicate code paths for core reporting/recovery logic.
+- Lower regression risk when extending optimize/eval/iterate features.
 
 ---
 
-## 1.5 Add config file support
+## 2.9 Class-specific AI prompt strategy (`HIGH`)
+
+**Why it matters**
+
+- Different doc classes need different optimization intent.
+- A single generic prompt underperforms for discipline vs reference vs collaborative docs.
 
 **Actionable tasks**
 
-- Define config schema (input globs, output mode, class overrides, provider settings).
-- Add default config discovery (`promptimize.config.*`).
-- Allow CLI flags to override config values.
+- Add class-scoped AI prompt templates.
+- Add prompt metadata to result traces for auditability.
+- Validate class-specific prompt impact via fixed-corpus eval.
 
 **Definition of done**
 
-- Reproducible project-level runs without long CLI command strings.
+- Measurable class-level quality gains without retention regressions.
 
 ---
 
-## 1.6 Iterative optimizer loop *(Phase A+B complete)*
+## 2.10 Append-only store scaling + maintenance (`HIGH`)
 
-**What shipped in Phase A**
+**Why it matters**
 
-- Local-first benchmark iteration CLI (`bun run iterate`).
-- Deterministic stratified train/hold-out split.
-- Frozen scorer/judge per run, accept/reject criteria, and max-iter/plateau budget stops.
-- Append-only NDJSON iteration store.
-
-**What shipped in Phase B**
-
-- Iteration-mode AI candidate diversity via `PROMPTIMIZE_ITERATE_TEMPERATURE` (default `0.3`, clamped to `0.0–0.7`).
-- Per-file AI-call budget controls via `--max-ai-calls` / `PROMPTIMIZE_ITERATE_MAX_AI_CALLS` with pre-call enforcement and local fallback continuation.
-- Structured iteration reporting (per-file deltas, by-class trends, hold-out average, result-store path) in text and JSON outputs.
-- Class-aware acceptance defaults tuned for practical behavior (`discipline` stricter rubric gains; `guidance/reference/collaborative` stricter preservation floors).
-
----
-
-## What changed recently (already shipped, not future work)
-
-- ✅ **Benchmark realism progressed**: fixture set expanded with real-derived skill docs and corpus registry updates (`benchmarks/CORPUS.md`).
-- ✅ **Docs baseline improved**: README/ROADMAP now track shipped optimize/eval/iterate behavior and artifact expectations.
-
----
-
-## Current bottlenecks (highest impact now)
-
-### A. AI/eval signal stability for accept/reject confidence (`HIGH`)
-
-**Why this matters now**
-
-- Iterate acceptance is only as reliable as score stability.
-- Small rubric swings can flip decisions near thresholds, especially with mixed local/AI judge paths.
+- NDJSON append-only store is simple and robust, but read/analysis cost grows with run volume.
 
 **Actionable tasks**
 
-- Add repeat-run variance checks for eval/iterate outputs on a fixed starter corpus.
-- Track and report confidence bands/noise ranges for rubric deltas in iterate/eval summaries.
-- Tighten guidance for when neutral/near-zero deltas should be accepted vs rejected.
+- Add index/manifest metadata for fast lookup by run/file/class.
+- Add optional compaction/archive command.
+- Add corruption detection + recovery guidance.
 
 **Definition of done**
 
-- Repeated runs show bounded variance that is documented and actionable.
-- Acceptance decisions near threshold are explainable with explicit signal/noise context.
+- Long-running experiment history remains fast to inspect and safe to maintain.
 
 ---
 
-### B. AI latency dominates end-to-end runtime (`HIGH`)
+## 3) Pre-launch hardening wave (`HIGH`)
 
-**Why this matters now**
+## 3.1 Lint/format enforcement in CI
 
-- Recent measurements show local processing is fast relative to model calls.
-- User-perceived speed and CI practicality are now constrained by AI request latency, retries, and judge overhead.
+- Add lint + format tooling/scripts.
+- Gate PRs on lint/format/test/eval/iterate-smoke.
 
-**Actionable tasks**
+## 3.2 Test depth where risk is highest
 
-- Add per-stage timing breakdowns (discovery, local optimize, AI optimize, judge, serialization) to eval/iterate reports.
-- Establish a local-first fast path profile for routine development checks.
-- Define practical retry/timeout defaults by run mode (smoke vs deep benchmark).
+- Expand CLI argument edge cases.
+- Expand discovery edge cases (hidden paths/symlinks/non-markdown).
+- Expand eval metric correctness and output path resolution tests.
 
-**Definition of done**
+## 3.3 Inflation guard completion
 
-- Reports make latency hotspots explicit per run.
-- Team can select predictable run profiles with documented time/cost tradeoffs.
+- Finish eval-side quality-vs-token-increase guardrail/reporting.
+- Keep known inflation fixtures protected by regression tests.
 
----
+## 3.4 Distribution story
 
-### C. Iterate/benchmark validation in CI (`HIGH`)
-
-**Why this matters now**
-
-- CI currently runs tests + eval JSON, but not iterate validation.
-- Regressions in iterate criteria/reporting can ship unnoticed.
-
-**Actionable tasks**
-
-- Add an iterate smoke workflow/job (small fixture subset, bounded iterations).
-- Assert NDJSON/report schema integrity for iterate outputs.
-- Keep runtime bounded to preserve CI signal speed.
-
-**Definition of done**
-
-- CI fails when iterate CLI behavior or report/store contracts regress.
-- Iterate smoke checks stay fast enough for normal PR cadence.
+- Finalize install/release channel (npm, Bun-friendly, or both).
+- Validate external bin behavior and release process.
 
 ---
 
-## Phase 2 — Distribution + adoption (`HIGH` / `POST-LAUNCH`)
+## 4) Ambitious backlog (organized feature expansion)
 
-## 2.1 Ship a practical distribution story (`HIGH`)
+Inspired by practical gaps + patterns seen in `autoresearch`, `hermes-agent`, `qmd`, and `deepagentsjs`.
 
-**Actionable tasks**
+## 4.1 Experiment tracking and reproducibility (`POST-LAUNCH`)
 
-- Decide release channel (npm package, Bun-friendly install instructions, or both).
-- Add versioning/release process.
-- Validate bin behavior outside repo checkout.
+- Run manifests with immutable config snapshot + env fingerprint.
+- Checkpoint/resume for interrupted iterate/eval runs.
+- Repro lockfiles for model/provider/judge settings.
+- Run lineage graph (parent/child experiment relationships).
 
-**Definition of done**
+## 4.2 Performance/caching systems (`POST-LAUNCH`)
 
-- New user can install and run `promptimize` without cloning source.
+- Content-hash caching for unchanged file/stage outputs.
+- Judge-response caching when prompt+candidate hash matches.
+- Trajectory/history compression for long optimization sequences.
+- Batch-mode provider requests where backend supports it.
+
+## 4.3 Quality systems: multi-judge + hybrid generation (`POST-LAUNCH`)
+
+- Multi-judge consensus (local + one or more AI judges).
+- Hybrid candidate generation (rule-based seed + AI rewrites + mutation variants).
+- Tie-breaker policies for conflicting judge outcomes.
+- Confidence-weighted acceptance instead of single scalar threshold.
+
+## 4.4 Granularity upgrades (`POST-LAUNCH`)
+
+- Section-level optimization mode (target selected headings/regions).
+- Region-level diff-aware writes instead of full-document rewrite.
+- Class-specific micro-policies at section granularity.
+
+## 4.5 Corpus operations and lifecycle (`POST-LAUNCH`)
+
+- Corpus maintenance commands (add/sanitize/validate/list/stats).
+- Tags/collections for fixture subsets (smoke/regression/class/provider).
+- Drift detection and fixture refresh workflows.
+- Golden-set curation mode for release gating.
+
+## 4.6 Reporting and observability (`POST-LAUNCH`)
+
+- Trend dashboards (quality/retention/tokens/runtime over time).
+- Cost reporting (estimated/actual token + provider call spend).
+- Per-stage flame/timing views for latency root-cause analysis.
+- Regression alerting for score/runtime/cost anomalies.
+
+## 4.7 SDK/API + integration surfaces (`POST-LAUNCH`)
+
+- Stable programmatic SDK surface for optimize/eval/iterate.
+- Embeddable API server mode for CI/platform integration.
+- MCP server support for tool-driven agent workflows.
+- Plugin/middleware architecture for custom scorers/judges/transforms.
+
+## 4.8 Developer UX improvements (`POST-LAUNCH`)
+
+- Watch mode for iterative local development loops.
+- Rich diff output modes (unified/side-by-side/JSON patch).
+- Better terminal progress/traceability for long runs.
+- “why accepted / why rejected” explainability summaries per iteration.
 
 ---
 
-## 2.2 Improve docs for users and maintainers (`HIGH`)
+## 5) Research tracks (time-boxed, evidence-driven)
 
-**Actionable tasks**
+## R1 — Concurrency vs quality stability (`RESEARCH`)
 
-- Keep README behavior matrix current with real implementation.
-- Add troubleshooting section for credentialed judge/provider failures.
-- Add examples for common project layouts and safe in-place usage.
+- Hypothesis: bounded parallelism reduces runtime without destabilizing acceptance outcomes.
+- Measure: runtime delta, acceptance drift, retry/fallback rates.
 
-**Definition of done**
+## R2 — Class-specific prompts vs generic prompt (`RESEARCH`)
 
-- New contributor can run build/test/eval and understand limits without reading source code.
+- Hypothesis: class-scoped prompts improve rubric + retention combined score.
+- Measure: per-class deltas on fixed corpus with repeated runs.
 
-**Current status**
+## R3 — Multi-judge consensus value (`RESEARCH`)
 
-- Partially complete: behavior/artifact drift was corrected, but troubleshooting depth and advanced usage examples still need expansion.
+- Hypothesis: consensus lowers false-positive accepts near threshold.
+- Measure: variance reduction and downstream regression rate.
 
----
+## R4 — Caching ROI (`RESEARCH`)
 
-## 2.3 Expand benchmark realism (`POST-LAUNCH`)
+- Hypothesis: hash-based stage caching yields major speedups on iterative corpus tuning.
+- Measure: wall-clock reduction and cache hit rates across repeated runs.
 
-**Actionable tasks**
+## R5 — Section-level optimization impact (`RESEARCH`)
 
-- Add more real-derived guidance/collaborative/reference fixtures.
-- Add fixture rotation/update cadence.
-- Add benchmark trend tracking between releases.
-
-**Definition of done**
-
-- Corpus better represents real-world instruction docs and drift over time.
-
-**Current status**
-
-- In progress: corpus expansion has started; rotation cadence and release-over-release trend tracking remain open.
+- Hypothesis: section-level mode improves retention while preserving quality gains.
+- Measure: retention shifts and user diff acceptability feedback.
 
 ---
 
-## Suggested execution order (next 30 days, updated)
+## 6) Suggested execution order (next 45 days)
 
-1. **Week 1:** Close 0.2 remaining eval-side inflation guard/reporting.
-2. **Week 1–2:** Add iterate smoke + report/store contract checks to CI.
-3. **Week 2:** Instrument and report timing breakdowns to address AI-latency bottlenecks.
-4. **Week 2–3:** Improve AI/eval signal stability (variance checks + threshold guidance).
-5. **Week 3:** Land 1.1 lint/format baseline and CI gating.
-6. **Week 3–4:** Expand 1.2 risk-focused tests, then 1.4 error recovery.
-7. **Week 4:** Revisit 1.3 token estimator and 1.5 config file MVP if capacity remains.
+1. **Week 1:** Iterate CI smoke + schema contract checks.
+2. **Week 1–2:** Signal stability instrumentation (variance + confidence bands).
+3. **Week 2:** Eval baseline comparison improvements.
+4. **Week 2–3:** File-level bounded parallelism + stage timing expansion.
+5. **Week 3:** Error recovery/continue-on-error + structured failure reporting.
+6. **Week 3–4:** Token estimator v2 + estimator transparency in reports.
+7. **Week 4:** Config discovery + `.env.example`.
+8. **Week 5:** Utility dedup pass to support maintainable growth.
+9. **Week 6:** Class-specific AI prompt strategy and validation pass.
 
-If schedule slips, defer Phase 2 and keep focus on launch-critical reliability/signal quality.
+If capacity slips, keep focus on `NEXT` items before adding new `POST-LAUNCH` features.

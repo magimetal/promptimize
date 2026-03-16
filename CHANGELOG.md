@@ -13,3 +13,4 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Updated OpenAI-compatible optimize provider to accept a configurable temperature (clamped to `0.0–0.7`) and added coverage for default/custom temperature behavior.
 - Updated project docs (`README.md`, `ROADMAP.md`) and `.gitignore` to document iterate-mode behavior and ignore local iteration result logs.
+- Reworked `ROADMAP.md` to reflect current shipped capabilities, near-term `NEXT` bottlenecks, pre-launch hardening priorities, and post-launch/research tracks.
