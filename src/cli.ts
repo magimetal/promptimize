@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { buildProviderChain } from "./providers";
+import { buildProviderChain, createOpenAiOptimizeCall } from "./providers";
 import { runPromptimize } from "./engine";
 import { runEvalCli } from "./eval-cli";
 import type { CliOptions } from "./types";
@@ -93,7 +93,7 @@ Options:
   --in-place             Overwrite source files
   --output-dir <path>    Write outputs to custom directory
   --format <text|json>   Output report format (default: text)
-  --ai                   Enable credentialed AI provider with automatic fallback
+  --ai                   Enable OpenAI-compatible AI provider with automatic fallback
   -h, --help             Show help`);
 }
 
@@ -102,9 +102,15 @@ function printTextResult(result: Awaited<ReturnType<typeof runPromptimize>>): vo
   console.log(`files scanned: ${result.totals.filesScanned}`);
   console.log(`files changed: ${result.totals.filesChanged}`);
   console.log(`tokens: ${result.totals.tokensBefore} -> ${result.totals.tokensAfter} (${result.totals.tokenDeltaPct}%)`);
+  console.log(
+    `providers: credentialed ${result.totals.providerUsage.credentialed}, local ${result.totals.providerUsage.local}, fallbacks ${result.totals.providerUsage.fallbacks}`,
+  );
   for (const file of result.files) {
+    const fallbackSuffix = file.provider.fallbackUsed
+      ? ` fallback from ${file.provider.fallbackFrom ?? "credentialed-agent"} (error)`
+      : "";
     console.log(
-      `- ${file.sourcePath} -> ${file.outputPath} [${file.classification}] tokens ${file.metrics.tokenEstimateBefore} -> ${file.metrics.tokenEstimateAfter}`,
+      `- ${file.sourcePath} -> ${file.outputPath} [${file.classification}] provider ${file.provider.selected}${fallbackSuffix} tokens ${file.metrics.tokenEstimateBefore} -> ${file.metrics.tokenEstimateAfter}`,
     );
   }
 }
@@ -118,7 +124,7 @@ async function main(): Promise<void> {
     }
 
     const options = parseArgs(argv);
-    const provider = buildProviderChain(options.ai);
+    const provider = buildProviderChain(options.ai, createOpenAiOptimizeCall());
     const result = await runPromptimize(options, provider);
     if (options.format === "json") {
       console.log(JSON.stringify(result, null, 2));

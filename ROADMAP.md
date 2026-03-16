@@ -12,29 +12,29 @@ Status labels:
 
 ## Phase 0 — Launch blockers (`BLOCKER`)
 
-## 0.1 Wire real AI optimization path into main optimize pipeline
+## 0.1 Wire real AI optimization path into main optimize pipeline *(complete)*
 
 **Why this is a blocker**
 
-- The CLI exposes `--ai`, but optimize currently stays rule-based because no LLM call is passed into the provider chain.
-- This creates a capability/expectation mismatch for users.
+- Core wiring now exists: optimize `--ai` can call an OpenAI-compatible chat-completions endpoint.
+- Output now reports optimize provider usage (credentialed/local/fallback) per file and in totals.
+- OpenAI-compatible optimize/eval calls now use timeout + retry policy before local fallback.
 
 **Actionable tasks**
 
-- Implement a real `llmCall` path for optimize command.
-- Add explicit provider selection/reporting in optimize output (`local` vs `credentialed`).
-- Keep safe fallback to local optimizer if credentials/call fail.
-- Add timeout + retry policy for credentialed provider.
+- ✅ Add explicit provider selection/reporting in optimize output (`local` vs `credentialed`).
+- ✅ Add timeout + retry policy for credentialed provider.
+- ✅ Tune default OpenAI-compatible timeout/retry for local-model reliability (`45000ms`, `2` retries) while preserving fallback.
 
 **Definition of done**
 
-- `promptimize --ai <path>` uses credentialed provider when key exists.
-- On auth/network/model failure, run completes with local fallback and clear warning.
-- Tests cover: credential success, missing key fallback, runtime failure fallback.
+- `promptimize --ai <path>` uses credentialed provider when key exists or when `PROMPTIMIZE_BASE_URL` is configured for local OpenAI-compatible servers.
+- On auth/network/model failure, run completes with local fallback.
+- Tests cover: credential success, base-url availability without key, runtime failure fallback.
 
 ---
 
-## 0.2 Fix token inflation regressions from markdown serialization
+## 0.2 Fix token inflation regressions from markdown serialization *(in progress)*
 
 **Why this is a blocker**
 
@@ -43,9 +43,9 @@ Status labels:
 
 **Actionable tasks**
 
-- Add targeted fixtures that currently inflate.
-- Adjust stringify strategy and/or whitespace compaction rules to avoid token-expanding rewrites.
-- Add guardrail in optimize/eval to flag regressions where quality does not improve enough to justify token increase.
+- ✅ Add targeted inflation regression coverage (`tests/engine.test.ts` quick-reference fixture).
+- ✅ Add local-rule inflation guard in optimize pipeline (revert to source when local candidate inflates token estimate).
+- ⏳ Add eval-side guardrail/reporting for “quality gain vs token increase” decisions.
 
 **Definition of done**
 
@@ -54,44 +54,46 @@ Status labels:
 
 ---
 
-## 0.3 Repository hygiene baseline
+## 0.3 Repository hygiene baseline *(complete)*
 
-**Why this is a blocker**
+**Why this was a blocker**
 
-- No git repository metadata, `.gitignore`, or `LICENSE` in the current project state.
-- This blocks clean collaboration and distribution readiness.
+- Missing explicit licensing blocked clean collaboration and distribution readiness.
 
 **Actionable tasks**
 
 - Initialize git repository if not already managed upstream.
 - Add `.gitignore` for Bun/TS outputs and local artifacts.
-- Add project license file.
+- ✅ Add project license file.
 
 **Definition of done**
 
-- Repo has version control metadata.
-- Build/test artifacts are ignored.
-- License is explicit and visible.
+- ✅ Repo has version control metadata.
+- ✅ Build/test artifacts are ignored.
+- ✅ License is explicit and visible.
 
 ---
 
-## 0.4 Remove or formalize unused build outputs
+## 0.4 Remove or formalize unused build outputs *(complete)*
 
-**Why this is a blocker**
+**Why this was a blocker**
 
-- Output behavior and artifact expectations are currently ambiguous.
-- Ambiguity increases accidental clutter and user confusion.
+- Output behavior and artifact expectations were ambiguous.
+- That ambiguity increased accidental clutter and user confusion.
 
 **Actionable tasks**
 
-- Audit generated outputs from optimize/eval workflows.
-- Document which artifacts are intentional.
-- Remove dead outputs or move them to explicit artifact directories.
+- ✅ Audit generated outputs from optimize/eval workflows.
+- ✅ Document intentional artifacts and their purpose (`README.md`).
+- ✅ Formalize build artifact behavior:
+  - default `bun run build` is verification-only (`tsc --noEmit`)
+  - optional `bun run build:dist` emits `dist/` when explicitly needed
+  - generated optimize outputs (`*.optimized.md`, `*-optimized/`) and local artifacts stay ignored by default
 
 **Definition of done**
 
-- All generated artifacts have a documented purpose.
-- No unexplained files appear during normal workflows.
+- ✅ All generated artifacts have a documented purpose.
+- ✅ No unexplained files appear during normal workflows.
 
 ---
 
@@ -222,7 +224,7 @@ Current tests cover core paths but still miss key edge cases in CLI/discovery/me
 
 1. **Week 1:** 0.1 AI optimize wiring + tests
 2. **Week 1–2:** 0.2 token inflation fixes + regression fixtures
-3. **Week 2:** 0.3 repo hygiene + 0.4 output cleanup
+3. **Week 2:** 0.3 repo hygiene + 0.4 output cleanup *(done)*
 4. **Week 3:** 1.1 lint/format + CI gating
 5. **Week 3–4:** 1.2 coverage expansion + 1.4 error recovery
 6. **Week 4:** 1.3 token estimator upgrade + 1.5 config file MVP

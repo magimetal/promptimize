@@ -84,7 +84,7 @@ Options:
   --format <text|json>   Output report format (default: text)
   --report-file <path>   Write JSON report to a file
   --verbose              Print original and optimized file bodies (text format only)
-  --ai                   Enable credentialed rubric judge with local fallback
+  --ai                   Enable OpenAI-compatible rubric judge with local fallback
   -h, --help             Show help`);
 }
 

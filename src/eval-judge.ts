@@ -1,4 +1,6 @@
 import { analyzeMarkdownMetrics, computeClarityScore, computeRetentionScore } from "./eval-metrics";
+import { buildOpenAiCompatibleHeaders, hasCredentialedAiConfig, resolveAiBaseUrl } from "./ai-config";
+import { runWithTimeoutAndRetry } from "./ai-request";
 import type { RubricJudge, RubricJudgeInput, RubricScore } from "./types";
 
 interface JudgeCallResult {
@@ -63,7 +65,7 @@ class CredentialedRubricJudge implements RubricJudge {
   public constructor(private readonly judgeCall: JudgeCall) {}
 
   public isAvailable(): boolean {
-    return Boolean(process.env.PROMPTIMIZE_AI_KEY || process.env.OPENAI_API_KEY);
+    return hasCredentialedAiConfig();
   }
 
   public async score(input: RubricJudgeInput): Promise<RubricScore> {
@@ -117,76 +119,71 @@ export function buildRubricJudge(aiEnabled: boolean, judgeCall?: JudgeCall): Rub
   return new RubricJudgeChain([credentialed, local]);
 }
 
-function createOpenAiJudgeCall(fetchImpl: typeof fetch = fetch): JudgeCall {
+export function createOpenAiJudgeCall(fetchImpl: typeof fetch = fetch): JudgeCall {
   return async (input) => {
-    const apiKey = process.env.PROMPTIMIZE_AI_KEY || process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error("Missing API key for credentialed rubric judge");
-    }
+    return runWithTimeoutAndRetry("OpenAI judge call", async (signal) => {
+      const response = await fetchImpl(`${resolveAiBaseUrl()}/chat/completions`, {
+        method: "POST",
+        headers: buildOpenAiCompatibleHeaders(),
+        signal,
+        body: JSON.stringify({
+          model: process.env.PROMPTIMIZE_EVAL_MODEL || "gpt-4.1-mini",
+          temperature: 0,
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a strict documentation evaluator. Score the candidate markdown against quality dimensions for AI execution quality. Return JSON only.",
+            },
+            {
+              role: "user",
+              content: [
+                `classification: ${input.classification}`,
+                "score each field 0-100:",
+                "- clarity: concise, unambiguous wording",
+                "- structure: scannable headings/lists",
+                "- actionability: explicit directives where appropriate for class",
+                "- preservation: candidate keeps critical constraints and technical details from original",
+                "- overall: balanced quality score",
+                "Include short rationale with concrete observations.",
+                'Return JSON: {"overall":number,"clarity":number,"structure":number,"actionability":number,"preservation":number,"rationale":string}',
+                "Original markdown:",
+                input.originalBody,
+                "Candidate markdown:",
+                input.candidateBody,
+              ].join("\n\n"),
+            },
+          ],
+        }),
+      });
 
-    const response = await fetchImpl("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: process.env.PROMPTIMIZE_EVAL_MODEL || "gpt-4.1-mini",
-        temperature: 0,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a strict documentation evaluator. Score the candidate markdown against quality dimensions for AI execution quality. Return JSON only.",
-          },
-          {
-            role: "user",
-            content: [
-              `classification: ${input.classification}`,
-              "score each field 0-100:",
-              "- clarity: concise, unambiguous wording",
-              "- structure: scannable headings/lists",
-              "- actionability: explicit directives where appropriate for class",
-              "- preservation: candidate keeps critical constraints and technical details from original",
-              "- overall: balanced quality score",
-              "Include short rationale with concrete observations.",
-              'Return JSON: {"overall":number,"clarity":number,"structure":number,"actionability":number,"preservation":number,"rationale":string}',
-              "Original markdown:",
-              input.originalBody,
-              "Candidate markdown:",
-              input.candidateBody,
-            ].join("\n\n"),
-          },
-        ],
-      }),
+      if (!response.ok) {
+        throw new Error(`OpenAI judge call failed: ${response.status}`);
+      }
+
+      const payload = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+
+      const content = payload.choices?.[0]?.message?.content;
+      if (!content) {
+        throw new Error("OpenAI judge call returned empty response");
+      }
+
+      const parsed = parseJsonObject(content);
+      if (!parsed) {
+        throw new Error("OpenAI judge returned non-JSON content");
+      }
+
+      return {
+        overall: toNumber(parsed.overall),
+        clarity: toNumber(parsed.clarity),
+        structure: toNumber(parsed.structure),
+        actionability: toNumber(parsed.actionability),
+        preservation: toNumber(parsed.preservation),
+        rationale: typeof parsed.rationale === "string" ? parsed.rationale : "No rationale provided.",
+      };
     });
-
-    if (!response.ok) {
-      throw new Error(`OpenAI judge call failed: ${response.status}`);
-    }
-
-    const payload = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-
-    const content = payload.choices?.[0]?.message?.content;
-    if (!content) {
-      throw new Error("OpenAI judge call returned empty response");
-    }
-
-    const parsed = parseJsonObject(content);
-    if (!parsed) {
-      throw new Error("OpenAI judge returned non-JSON content");
-    }
-
-    return {
-      overall: toNumber(parsed.overall),
-      clarity: toNumber(parsed.clarity),
-      structure: toNumber(parsed.structure),
-      actionability: toNumber(parsed.actionability),
-      preservation: toNumber(parsed.preservation),
-      rationale: typeof parsed.rationale === "string" ? parsed.rationale : "No rationale provided.",
-    };
   };
 }
 

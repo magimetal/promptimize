@@ -2,12 +2,14 @@
   "name": "promptimize",
   "version": "0.1.0",
   "description": "Optimize markdown prompts and agent docs for AI readability and token efficiency",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "promptimize": "./bin/promptimize"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json --noEmit",
+    "build:dist": "tsc -p tsconfig.json",
     "test": "bun test",
     "promptimize": "bun run src/cli.ts",
     "eval": "bun run src/eval-cli.ts"

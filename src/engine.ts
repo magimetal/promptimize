@@ -16,16 +16,23 @@ export async function runPromptimize(options: CliOptions, provider: EnhancementP
     const parsed = splitFrontmatter(sourceText);
     const classification = classifyDocument(sourcePath, parsed.body);
     const optimizedBody = await optimizeMarkdownBody(parsed.body, classification);
-    const providerBody = await provider.enhance({
+    const providerResult = await provider.enhance({
       filePath: sourcePath,
       body: optimizedBody,
       classification,
     });
 
-    const outputText = joinFrontmatter({
+    const candidateOutputText = joinFrontmatter({
       frontmatterRaw: parsed.frontmatterRaw,
-      body: providerBody,
+      body: providerResult.body,
     });
+
+    const beforeTokens = estimateTokens(sourceText);
+    const candidateAfterTokens = estimateTokens(candidateOutputText);
+    const outputText =
+      providerResult.selected === "local-rule-agent" && candidateAfterTokens > beforeTokens
+        ? sourceText
+        : candidateOutputText;
 
     const outputPath = resolveOutputPath({
       sourcePath,
@@ -41,7 +48,6 @@ export async function runPromptimize(options: CliOptions, provider: EnhancementP
       await Bun.write(outputPath, outputText);
     }
 
-    const beforeTokens = estimateTokens(sourceText);
     const afterTokens = estimateTokens(outputText);
     const tokenDelta = afterTokens - beforeTokens;
 
@@ -50,6 +56,13 @@ export async function runPromptimize(options: CliOptions, provider: EnhancementP
       outputPath,
       classification,
       changed: sourceText !== outputText,
+      provider: {
+        attempted: providerResult.attempted,
+        selected: providerResult.selected,
+        fallbackUsed: providerResult.fallbackUsed,
+        ...(providerResult.fallbackFrom ? { fallbackFrom: providerResult.fallbackFrom } : {}),
+        ...(providerResult.fallbackReason ? { fallbackReason: providerResult.fallbackReason } : {}),
+      },
       metrics: {
         charsBefore: sourceText.length,
         charsAfter: outputText.length,
@@ -63,6 +76,11 @@ export async function runPromptimize(options: CliOptions, provider: EnhancementP
 
   const tokensBefore = files.reduce((sum, file) => sum + file.metrics.tokenEstimateBefore, 0);
   const tokensAfter = files.reduce((sum, file) => sum + file.metrics.tokenEstimateAfter, 0);
+  const providerUsage = {
+    credentialed: files.filter((file) => file.provider.selected === "credentialed-agent").length,
+    local: files.filter((file) => file.provider.selected === "local-rule-agent").length,
+    fallbacks: files.filter((file) => file.provider.fallbackUsed).length,
+  };
 
   return {
     mode,
@@ -74,6 +92,7 @@ export async function runPromptimize(options: CliOptions, provider: EnhancementP
       tokensAfter,
       tokenDelta: tokensAfter - tokensBefore,
       tokenDeltaPct: percentDelta(tokensBefore, tokensAfter),
+      providerUsage,
     },
   };
 }

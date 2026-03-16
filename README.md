@@ -19,24 +19,23 @@ It is **usable now** for deterministic rule-based optimization and benchmark eva
 ### ✅ Working today
 
 - End-to-end local optimization pipeline (`bun run promptimize -- <path>`).
+- Optional OpenAI-compatible AI optimization path (`bun run promptimize -- --ai <path>`) with local fallback.
+- Optimize output now reports provider usage per file and in totals (credentialed/local/fallback counts).
 - Eval harness with per-file and per-class scoring (`bun run eval`).
 - Local deterministic rubric judge.
-- Optional credentialed AI judge path for eval (`bun run eval -- --ai`) with local fallback.
+- Optional OpenAI-compatible AI judge path for eval (`bun run eval -- --ai`) with local fallback.
 - Real-derived benchmark fixture workflow and corpus registry.
 - CI workflow for tests + eval JSON output.
+- Explicit project license (`MIT`, see `LICENSE`).
 
 ### ⚠️ Not yet built or incomplete
 
-- **AI optimization in main optimize path is not actually wired**.
-  - `--ai` exists on `promptimize`, but current CLI/provider wiring does not pass an LLM call into the optimization provider chain.
-  - Result: optimization path remains local rule-based even when `--ai` is set.
 - Token estimation is still crude (`ceil(char_count / 4)`).
 - Missing linter/formatter setup and enforcement.
 - Limited CLI/discovery/metrics test depth (core paths tested, edge/error paths still thin).
 - Limited error recovery/reporting (single-file failures can abort full runs).
 - No config-file support yet.
 - No finalized distribution/release story yet.
-- Repository hygiene still incomplete (no local git metadata/license in this working directory context).
 
 ## Quick start
 
@@ -57,6 +56,14 @@ bun install
 bun run build
 bun test
 bun run eval -- --format json
+```
+
+`bun run build` is a verification step (TypeScript compile check with no emitted files).
+
+If you explicitly need emitted JS/type declarations for local inspection, run:
+
+```bash
+bun run build:dist
 ```
 
 ### First optimization run
@@ -83,7 +90,9 @@ Options:
 - `--in-place` — overwrite source files
 - `--output-dir <path>` — write output to custom location
 - `--format <text|json>` — output format for result summary (default `text`)
-- `--ai` — request credentialed provider path (**currently no-op for optimization until AI wiring lands**)
+- `--ai` — enable OpenAI-compatible AI provider with automatic local fallback
+  - JSON output includes per-file provider metadata (`selected`, `attempted`, `fallbackUsed`).
+  - Totals include `providerUsage` (`credentialed`, `local`, `fallbacks`).
 - `-h, --help` — show help
 
 Input path behavior:
@@ -97,6 +106,11 @@ Examples:
 ```bash
 # Dry-run a skill directory
 bun run promptimize -- --dry-run --format json ~/.config/opencode/skills/dev-frontend
+
+# Dry-run using local OpenAI-compatible endpoint + Qwen model
+PROMPTIMIZE_BASE_URL=http://192.168.68.52:1234/v1 \
+PROMPTIMIZE_MODEL=qwen/qwen3.5-9b \
+bun run promptimize -- --ai --dry-run --format json ~/.config/opencode/skills/dev-frontend
 
 # In-place rewrite
 bun run promptimize -- --in-place ./docs/AGENTS.md
@@ -136,6 +150,11 @@ bun run eval -- --format json --report-file ./artifacts/eval-report.json
 
 # Evaluate a custom benchmark folder
 bun run eval -- --format json ./benchmarks/fixtures
+
+# Evaluate with local OpenAI-compatible endpoint + Qwen model
+PROMPTIMIZE_BASE_URL=http://192.168.68.52:1234/v1 \
+PROMPTIMIZE_EVAL_MODEL=qwen/qwen3.5-9b \
+bun run eval -- --ai --format json ./benchmarks/fixtures
 ```
 
 ## Optimization pipeline (current implementation)
@@ -147,7 +166,9 @@ For each discovered Markdown file:
 3. Classify document (`src/classify.ts`).
 4. Optimize body with AST-aware + regex rules (`src/optimizer.ts`).
 5. Pass optimized body through provider chain (`src/providers.ts`).
-   - Current default provider returns body unchanged.
+   - OpenAI-compatible provider runs first when `--ai` and AI config are present.
+   - Local provider is always available fallback.
+   - Runtime AI failures trigger one local fallback and are reported in result metadata.
 6. Re-join frontmatter + body.
 7. Write output based on mode (`in-place`, side-by-side, or `output-dir`).
 8. Report metrics (`chars`, token estimate, deltas).
@@ -172,7 +193,7 @@ Scoring dimensions include:
   - retention score (critical headings/links/directive terms/code fences)
 - Rubric judge (`src/eval-judge.ts`):
   - local heuristic judge always available
-  - credentialed AI judge available in eval when key exists
+  - OpenAI-compatible AI judge available in eval when API key or `PROMPTIMIZE_BASE_URL` is configured
   - automatic fallback to local judge on credential/judge-call failure
 
 Interpretation guidance:
@@ -229,13 +250,25 @@ Add a real-derived fixture:
 Supported vars:
 
 - `PROMPTIMIZE_AI_KEY`
-  - Used for credentialed AI judge auth.
-  - Also checked by provider availability in optimize path, though optimize AI call is not currently wired.
+  - Optional bearer token for OpenAI-compatible optimize and eval judge calls.
 - `OPENAI_API_KEY`
-  - Alternative key for same credentialed paths.
+  - Alternative key for same OpenAI-compatible paths.
+- `PROMPTIMIZE_BASE_URL`
+  - Optional OpenAI-compatible API base URL.
+  - Default: `https://api.openai.com/v1`.
+  - If set (for example LM Studio), optimize/eval AI paths are considered available even without API key.
+- `PROMPTIMIZE_MODEL`
+  - Optional model override for optimize AI path.
+  - Default: `gpt-4.1-mini`.
 - `PROMPTIMIZE_EVAL_MODEL`
   - Optional model override for AI eval judge.
   - Default: `gpt-4.1-mini`.
+- `PROMPTIMIZE_AI_TIMEOUT_MS`
+  - Optional timeout for each OpenAI-compatible optimize/eval request.
+  - Default: `45000`.
+- `PROMPTIMIZE_AI_RETRIES`
+  - Optional retry count after initial OpenAI-compatible optimize/eval attempt.
+  - Default: `2` (3 total attempts).
 
 ## CI
 
@@ -247,6 +280,19 @@ On push/PR to `main`, CI runs:
 2. `bun test`
 3. `bun run eval -- --format json`
 
+## Generated outputs (formalized)
+
+Intentional generated outputs:
+
+- Optimize writes:
+  - single-file default: `<name>.optimized.md`
+  - directory default: `<input>-optimized/`
+  - custom: `--output-dir <path>`
+- Eval report: only when `--report-file <path>` is set
+- TypeScript emit: only when `bun run build:dist` is run (writes `dist/`)
+
+Ignored local artifacts (`.gitignore`): `dist/`, `artifacts/`, `*.optimized.md`, `*-optimized/`, coverage/log/env/editor noise.
+
 ## Project structure
 
 ```text
@@ -257,6 +303,7 @@ promptimize/
     engine.ts                      # file discovery, optimize loop, write modes, metrics
     optimizer.ts                   # markdown AST/rule optimizer
     classify.ts                    # doc class classification
+    ai-config.ts                   # OpenAI-compatible base URL + auth helpers
     discovery.ts                   # markdown file traversal
     frontmatter.ts                 # split/join frontmatter helpers
     providers.ts                   # optimization provider abstraction
@@ -270,6 +317,7 @@ promptimize/
     scripts/snapshot-fixture.sh    # real-derived fixture snapshot helper
     CORPUS.md                      # fixture registry and update policy
   .github/workflows/ci.yml
+  LICENSE
   ROADMAP.md
 ```
 

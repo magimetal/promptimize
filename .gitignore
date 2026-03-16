@@ -2,6 +2,8 @@ node_modules/
 dist/
 coverage/
 artifacts/
+*.optimized.md
+*-optimized/
 
 # Environment / local secrets
 .env

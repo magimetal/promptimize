@@ -68,6 +68,32 @@ describe("evaluation harness", () => {
     delete process.env.PROMPTIMIZE_AI_KEY;
   });
 
+  test("uses credentialed judge when base url exists without key", async () => {
+    process.env.PROMPTIMIZE_BASE_URL = "http://127.0.0.1:1234/v1";
+    delete process.env.PROMPTIMIZE_AI_KEY;
+    delete process.env.OPENAI_API_KEY;
+    const judge = buildRubricJudge(true, async () => ({
+      overall: 77,
+      clarity: 78,
+      structure: 77,
+      actionability: 76,
+      preservation: 77,
+      rationale: "base-url judge",
+    }));
+
+    const result = await runEvaluation(
+      {
+        inputPath: FIXTURE_PATH,
+        ai: true,
+        format: "json",
+      },
+      judge,
+    );
+
+    expect(result.files.every((file) => file.rubricAfter.provider === "credentialed-rubric-judge")).toBeTrue();
+    delete process.env.PROMPTIMIZE_BASE_URL;
+  });
+
   test("falls back to local judge when credentialed call fails", async () => {
     process.env.PROMPTIMIZE_AI_KEY = "test-key";
     const judge = buildRubricJudge(true, async () => {

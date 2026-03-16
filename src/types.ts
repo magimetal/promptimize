@@ -19,6 +19,13 @@ export interface FileProcessResult {
   outputPath: string;
   classification: DocClass;
   changed: boolean;
+  provider: {
+    attempted: string[];
+    selected: string;
+    fallbackUsed: boolean;
+    fallbackFrom?: string;
+    fallbackReason?: "error";
+  };
   metrics: {
     charsBefore: number;
     charsAfter: number;
@@ -39,6 +46,11 @@ export interface RunResult {
     tokensAfter: number;
     tokenDelta: number;
     tokenDeltaPct: number;
+    providerUsage: {
+      credentialed: number;
+      local: number;
+      fallbacks: number;
+    };
   };
 }
 
@@ -51,7 +63,16 @@ export interface OptimizeRequest {
 export interface EnhancementProvider {
   readonly name: string;
   isAvailable(): boolean;
-  enhance(input: OptimizeRequest): Promise<string>;
+  enhance(input: OptimizeRequest): Promise<EnhancementResult>;
+}
+
+export interface EnhancementResult {
+  body: string;
+  attempted: string[];
+  selected: string;
+  fallbackUsed: boolean;
+  fallbackFrom?: string;
+  fallbackReason?: "error";
 }
 
 export interface EvalCliOptions {
