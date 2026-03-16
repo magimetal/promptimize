@@ -1,8 +1,8 @@
 # promptimize
 
-`promptimize` is a standalone Bun + TypeScript CLI for optimizing Markdown instruction docs (skills, agents, runbooks, references) for AI execution quality and token efficiency.
+`promptimize` is a standalone Bun + TypeScript CLI for optimizing Markdown instruction docs (skills, agents, runbooks, references) and iteratively tuning optimization behavior against a benchmark corpus.
 
-It is **usable now** for deterministic rule-based optimization and benchmark evaluation. It is **not launch-complete yet** (see [Current maturity](#current-maturity--honest-status) and [ROADMAP.md](./ROADMAP.md)).
+It is **usable now** for local optimization, benchmark eval, and iterative optimizer Phase A+B workflows. It is **not launch-complete yet** (see [Current maturity](#current-maturity--honest-status) and [ROADMAP.md](./ROADMAP.md)).
 
 ## What promptimize does
 
@@ -13,6 +13,7 @@ It is **usable now** for deterministic rule-based optimization and benchmark eva
 - Writes optimized output side-by-side by default, or in-place/custom output directory.
 - Reports per-file and aggregate deltas (chars + estimated tokens).
 - Includes a benchmark/eval harness with deterministic metrics plus optional AI rubric judging.
+- Includes iterative optimizer Phase A+B (`bun run iterate`) with class-aware acceptance criteria, train/hold-out splitting, AI-call budgeting, convergence stops, and append-only NDJSON logs.
 
 ## Current maturity / honest status
 
@@ -179,7 +180,7 @@ Options:
 Behavior:
 
 - Train split: files are iterated with accept/reject criteria.
-- AI runs use `PROMPTIMIZE_ITERATE_TEMPERATURE` (default `0.3`, clamped to `0.7`) to improve candidate diversity.
+- AI runs in iterate mode only use `PROMPTIMIZE_ITERATE_TEMPERATURE` (default `0.3`, clamped to `0.0–0.7`) to improve candidate diversity.
 - AI call budget is enforced before credentialed calls; once exhausted, iterations continue with local fallback candidates.
 - Hold-out split: files are score-only (never enhanced, never written to NDJSON store).
 - Retention scoring is always measured against each file's original body.
@@ -189,7 +190,7 @@ Behavior:
 Examples:
 
 ```bash
-# local-first Phase A run
+# local-first Phase A+B run
 bun run iterate -- --format text
 
 # produce JSON output + JSON artifact
@@ -214,6 +215,23 @@ bun run iterate -- --ai --max-iter 3 --max-ai-calls 2 \
   ./benchmarks/fixtures/discipline-skill-dev-review-changes.md \
   ./benchmarks/fixtures/guidance-skill-ghostty-themes.md
 ```
+
+### Iterate acceptance defaults (class-aware)
+
+By default, iterate accepts a candidate only when all of these checks pass:
+
+- `maxTokenInflation`: `0` (no positive token-count growth accepted)
+- baseline rubric delta floor: `+0.5`
+- baseline preservation floor: `75`
+
+Class overrides:
+
+- `discipline`: rubric delta must be `>= +1.0`
+- `guidance`: rubric delta can be `>= 0`, preservation floor `85`
+- `reference`: rubric delta can be `>= 0`, preservation floor `90`
+- `collaborative`: rubric delta can be `>= 0`, preservation floor `90`
+
+This allows neutral classes to accept retention-safe non-regressive rewrites while keeping stricter gains for `discipline` docs.
 
 ## Optimization pipeline (current implementation)
 
@@ -353,9 +371,11 @@ Intentional generated outputs:
   - directory default: `<input>-optimized/`
   - custom: `--output-dir <path>`
 - Eval report: only when `--report-file <path>` is set
+- Iterate result store: append-only NDJSON at `benchmarks/iterate-results.ndjson` by default (override with `--result-file`)
+- Iterate JSON summary: only when `--report-file <path>` is set
 - TypeScript emit: only when `bun run build:dist` is run (writes `dist/`)
 
-Ignored local artifacts (`.gitignore`): `dist/`, `artifacts/`, `*.optimized.md`, `*-optimized/`, coverage/log/env/editor noise.
+Ignored local artifacts (`.gitignore`): `dist/`, `artifacts/`, `benchmarks/iterate-results.ndjson`, `*.optimized.md`, `*-optimized/`, coverage/log/env/editor noise.
 
 ## Project structure
 
@@ -363,31 +383,36 @@ Ignored local artifacts (`.gitignore`): `dist/`, `artifacts/`, `*.optimized.md`,
 promptimize/
   bin/promptimize                  # CLI bin entrypoint
   src/
+    ai-request.ts                  # shared OpenAI-compatible request + retry/timeout helpers
     cli.ts                         # optimize command + eval subcommand dispatch
     engine.ts                      # file discovery, optimize loop, write modes, metrics
     optimizer.ts                   # markdown AST/rule optimizer
     classify.ts                    # doc class classification
     ai-config.ts                   # OpenAI-compatible base URL + auth helpers
     discovery.ts                   # markdown file traversal
+    eval-cli.ts                    # standalone eval CLI entrypoint
     frontmatter.ts                 # split/join frontmatter helpers
     providers.ts                   # optimization provider abstraction
     eval.ts                        # benchmark/eval orchestration + formatting
-    iterate-cli.ts                 # iterative optimization CLI (Phase A)
+    iterate-cli.ts                 # iterative optimization CLI (Phase A+B)
     iterate-engine.ts              # iteration loop controller
     iterate-scorer.ts              # unified deterministic+rubric scoring
     iterate-criteria.ts            # accept/reject criteria
     iterate-budget.ts              # stopping logic (max iter/plateau/AI budget)
     iterate-store.ts               # append-only NDJSON result store
     iterate-corpus.ts              # deterministic stratified train/hold-out split
+    iterate-report.ts              # structured iterate summaries (text + JSON)
     eval-metrics.ts                # deterministic scoring metrics
     eval-judge.ts                  # local + credentialed rubric judges
     types.ts                       # shared types
-  tests/                           # bun test coverage for core modules
+  tests/                           # unit test suites across optimize/eval/iterate/provider paths
+    *.test.ts
   benchmarks/
     fixtures/                      # synthetic + real-derived benchmark docs
     scripts/snapshot-fixture.sh    # real-derived fixture snapshot helper
     CORPUS.md                      # fixture registry and update policy
   .github/workflows/ci.yml
+  CHANGELOG.md
   LICENSE
   ROADMAP.md
 ```
@@ -412,6 +437,7 @@ promptimize/
 - Token estimate is heuristic only, not tokenizer-accurate.
 - Error handling is still coarse (limited per-file recovery/reporting).
 - CLI UX is functional but minimal (limited diagnostics/config ergonomics).
+- AI-enabled iterate/eval runtime is often dominated by model/network latency rather than local processing.
 - No release packaging/publishing pipeline yet.
 
 See [ROADMAP.md](./ROADMAP.md) for prioritized launch blockers and post-launch enhancements.

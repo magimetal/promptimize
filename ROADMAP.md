@@ -34,7 +34,7 @@ Status labels:
 
 ---
 
-## 0.2 Fix token inflation regressions from markdown serialization *(in progress)*
+## 0.2 Fix token inflation regressions from markdown serialization *(partially complete)*
 
 **Why this is a blocker**
 
@@ -45,12 +45,13 @@ Status labels:
 
 - ✅ Add targeted inflation regression coverage (`tests/engine.test.ts` quick-reference fixture).
 - ✅ Add local-rule inflation guard in optimize pipeline (revert to source when local candidate inflates token estimate).
-- ⏳ Add eval-side guardrail/reporting for “quality gain vs token increase” decisions.
+- ⏳ Add eval-side guardrail/reporting for “quality gain vs token increase” decisions (still open).
 
 **Definition of done**
 
 - Known inflation fixtures no longer regress or are explicitly justified by quality gains.
 - Regression tests enforce no accidental inflation for baseline fixtures.
+- Eval output clearly separates acceptable quality-driven inflation from avoidable inflation.
 
 ---
 
@@ -187,9 +188,79 @@ Current tests cover core paths but still miss key edge cases in CLI/discovery/me
 
 **What shipped in Phase B**
 
-- Iteration-mode AI candidate diversity via `PROMPTIMIZE_ITERATE_TEMPERATURE` (default `0.3`, clamped to `0.7`).
+- Iteration-mode AI candidate diversity via `PROMPTIMIZE_ITERATE_TEMPERATURE` (default `0.3`, clamped to `0.0–0.7`).
 - Per-file AI-call budget controls via `--max-ai-calls` / `PROMPTIMIZE_ITERATE_MAX_AI_CALLS` with pre-call enforcement and local fallback continuation.
 - Structured iteration reporting (per-file deltas, by-class trends, hold-out average, result-store path) in text and JSON outputs.
+- Class-aware acceptance defaults tuned for practical behavior (`discipline` stricter rubric gains; `guidance/reference/collaborative` stricter preservation floors).
+
+---
+
+## What changed recently (already shipped, not future work)
+
+- ✅ **Benchmark realism progressed**: fixture set expanded with real-derived skill docs and corpus registry updates (`benchmarks/CORPUS.md`).
+- ✅ **Docs baseline improved**: README/ROADMAP now track shipped optimize/eval/iterate behavior and artifact expectations.
+
+---
+
+## Current bottlenecks (highest impact now)
+
+### A. AI/eval signal stability for accept/reject confidence (`HIGH`)
+
+**Why this matters now**
+
+- Iterate acceptance is only as reliable as score stability.
+- Small rubric swings can flip decisions near thresholds, especially with mixed local/AI judge paths.
+
+**Actionable tasks**
+
+- Add repeat-run variance checks for eval/iterate outputs on a fixed starter corpus.
+- Track and report confidence bands/noise ranges for rubric deltas in iterate/eval summaries.
+- Tighten guidance for when neutral/near-zero deltas should be accepted vs rejected.
+
+**Definition of done**
+
+- Repeated runs show bounded variance that is documented and actionable.
+- Acceptance decisions near threshold are explainable with explicit signal/noise context.
+
+---
+
+### B. AI latency dominates end-to-end runtime (`HIGH`)
+
+**Why this matters now**
+
+- Recent measurements show local processing is fast relative to model calls.
+- User-perceived speed and CI practicality are now constrained by AI request latency, retries, and judge overhead.
+
+**Actionable tasks**
+
+- Add per-stage timing breakdowns (discovery, local optimize, AI optimize, judge, serialization) to eval/iterate reports.
+- Establish a local-first fast path profile for routine development checks.
+- Define practical retry/timeout defaults by run mode (smoke vs deep benchmark).
+
+**Definition of done**
+
+- Reports make latency hotspots explicit per run.
+- Team can select predictable run profiles with documented time/cost tradeoffs.
+
+---
+
+### C. Iterate/benchmark validation in CI (`HIGH`)
+
+**Why this matters now**
+
+- CI currently runs tests + eval JSON, but not iterate validation.
+- Regressions in iterate criteria/reporting can ship unnoticed.
+
+**Actionable tasks**
+
+- Add an iterate smoke workflow/job (small fixture subset, bounded iterations).
+- Assert NDJSON/report schema integrity for iterate outputs.
+- Keep runtime bounded to preserve CI signal speed.
+
+**Definition of done**
+
+- CI fails when iterate CLI behavior or report/store contracts regress.
+- Iterate smoke checks stay fast enough for normal PR cadence.
 
 ---
 
@@ -221,6 +292,10 @@ Current tests cover core paths but still miss key edge cases in CLI/discovery/me
 
 - New contributor can run build/test/eval and understand limits without reading source code.
 
+**Current status**
+
+- Partially complete: behavior/artifact drift was corrected, but troubleshooting depth and advanced usage examples still need expansion.
+
 ---
 
 ## 2.3 Expand benchmark realism (`POST-LAUNCH`)
@@ -235,15 +310,20 @@ Current tests cover core paths but still miss key edge cases in CLI/discovery/me
 
 - Corpus better represents real-world instruction docs and drift over time.
 
+**Current status**
+
+- In progress: corpus expansion has started; rotation cadence and release-over-release trend tracking remain open.
+
 ---
 
-## Suggested execution order (next 30 days)
+## Suggested execution order (next 30 days, updated)
 
-1. **Week 1:** 0.1 AI optimize wiring + tests
-2. **Week 1–2:** 0.2 token inflation fixes + regression fixtures
-3. **Week 2:** 0.3 repo hygiene + 0.4 output cleanup *(done)*
-4. **Week 3:** 1.1 lint/format + CI gating
-5. **Week 3–4:** 1.2 coverage expansion + 1.4 error recovery
-6. **Week 4:** 1.3 token estimator upgrade + 1.5 config file MVP
+1. **Week 1:** Close 0.2 remaining eval-side inflation guard/reporting.
+2. **Week 1–2:** Add iterate smoke + report/store contract checks to CI.
+3. **Week 2:** Instrument and report timing breakdowns to address AI-latency bottlenecks.
+4. **Week 2–3:** Improve AI/eval signal stability (variance checks + threshold guidance).
+5. **Week 3:** Land 1.1 lint/format baseline and CI gating.
+6. **Week 3–4:** Expand 1.2 risk-focused tests, then 1.4 error recovery.
+7. **Week 4:** Revisit 1.3 token estimator and 1.5 config file MVP if capacity remains.
 
-If schedule slips, defer Phase 2. Do not defer Phase 0.
+If schedule slips, defer Phase 2 and keep focus on launch-critical reliability/signal quality.
