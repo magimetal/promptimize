@@ -1,0 +1,25 @@
+{
+  "name": "promptimize",
+  "version": "0.1.0",
+  "description": "Optimize markdown prompts and agent docs for AI readability and token efficiency",
+  "type": "module",
+  "bin": {
+    "promptimize": "./bin/promptimize"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "bun test",
+    "promptimize": "bun run src/cli.ts",
+    "eval": "bun run src/eval-cli.ts"
+  },
+  "dependencies": {
+    "remark-parse": "^11.0.0",
+    "remark-stringify": "^11.0.0",
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.3"
+  }
+}
