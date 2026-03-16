@@ -12,7 +12,8 @@
     "build:dist": "tsc -p tsconfig.json",
     "test": "bun test",
     "promptimize": "bun run src/cli.ts",
-    "eval": "bun run src/eval-cli.ts"
+    "eval": "bun run src/eval-cli.ts",
+    "iterate": "bun run src/iterate-cli.ts"
   },
   "dependencies": {
     "remark-parse": "^11.0.0",

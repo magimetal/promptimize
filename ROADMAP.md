@@ -176,6 +176,23 @@ Current tests cover core paths but still miss key edge cases in CLI/discovery/me
 
 ---
 
+## 1.6 Iterative optimizer loop *(Phase A+B complete)*
+
+**What shipped in Phase A**
+
+- Local-first benchmark iteration CLI (`bun run iterate`).
+- Deterministic stratified train/hold-out split.
+- Frozen scorer/judge per run, accept/reject criteria, and max-iter/plateau budget stops.
+- Append-only NDJSON iteration store.
+
+**What shipped in Phase B**
+
+- Iteration-mode AI candidate diversity via `PROMPTIMIZE_ITERATE_TEMPERATURE` (default `0.3`, clamped to `0.7`).
+- Per-file AI-call budget controls via `--max-ai-calls` / `PROMPTIMIZE_ITERATE_MAX_AI_CALLS` with pre-call enforcement and local fallback continuation.
+- Structured iteration reporting (per-file deltas, by-class trends, hold-out average, result-store path) in text and JSON outputs.
+
+---
+
 ## Phase 2 — Distribution + adoption (`HIGH` / `POST-LAUNCH`)
 
 ## 2.1 Ship a practical distribution story (`HIGH`)

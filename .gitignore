@@ -2,6 +2,7 @@ node_modules/
 dist/
 coverage/
 artifacts/
+benchmarks/iterate-results.ndjson
 *.optimized.md
 *-optimized/
 

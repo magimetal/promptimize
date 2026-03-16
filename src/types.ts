@@ -164,3 +164,49 @@ export interface RubricJudge {
   isAvailable(): boolean;
   score(input: RubricJudgeInput): Promise<RubricScore>;
 }
+
+export interface CandidateScore {
+  rubric: RubricScore;
+  metrics: DeterministicMetrics;
+  retention: number;
+  composite: number;
+  tokenCount: number;
+}
+
+export interface IterationRecord {
+  iter: number;
+  filePath: string;
+  classification: DocClass;
+  candidateBody: string;
+  scoreBefore: CandidateScore;
+  scoreAfter: CandidateScore;
+  accepted: boolean;
+  acceptanceReason: string;
+  aiCallMade: boolean;
+  durationMs: number;
+}
+
+export interface IterationRunResult {
+  filePath: string;
+  classification: DocClass;
+  iterations: IterationRecord[];
+  baselineScore: CandidateScore;
+  finalScore: CandidateScore;
+  finalBody: string;
+  totalIter: number;
+  converged: boolean;
+  stopReason: string;
+}
+
+export interface IterationBudget {
+  maxIterations: number;
+  maxAiCallsPerFile: number;
+  plateauWindowSize: number;
+  plateauMinDelta: number;
+  resultFile: string;
+}
+
+export interface ResultStore {
+  append(record: IterationRecord): Promise<void>;
+  loadHistory(): Promise<IterationRecord[]>;
+}

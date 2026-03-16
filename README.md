@@ -22,6 +22,7 @@ It is **usable now** for deterministic rule-based optimization and benchmark eva
 - Optional OpenAI-compatible AI optimization path (`bun run promptimize -- --ai <path>`) with local fallback.
 - Optimize output now reports provider usage per file and in totals (credentialed/local/fallback counts).
 - Eval harness with per-file and per-class scoring (`bun run eval`).
+- Iterative optimizer Phase A+B loop over benchmark corpus (`bun run iterate`) with AI candidate diversity controls, AI-call budgeting, structured trend reporting, train/hold-out split, acceptance criteria, and NDJSON iteration logs.
 - Local deterministic rubric judge.
 - Optional OpenAI-compatible AI judge path for eval (`bun run eval -- --ai`) with local fallback.
 - Real-derived benchmark fixture workflow and corpus registry.
@@ -56,6 +57,7 @@ bun install
 bun run build
 bun test
 bun run eval -- --format json
+bun run iterate -- --max-iter 2
 ```
 
 `bun run build` is a verification step (TypeScript compile check with no emitted files).
@@ -155,6 +157,62 @@ bun run eval -- --format json ./benchmarks/fixtures
 PROMPTIMIZE_BASE_URL=http://192.168.68.52:1234/v1 \
 PROMPTIMIZE_EVAL_MODEL=qwen/qwen3.5-9b \
 bun run eval -- --ai --format json ./benchmarks/fixtures
+```
+
+### Iterate command (Phase A+B)
+
+```bash
+bun run iterate -- [options] [path ...]
+```
+
+Options:
+
+- `--ai` — enable OpenAI-compatible provider/judge with local fallback
+- `--max-iter <n>` — max iterations per train file (default `5`)
+- `--max-ai-calls <n>` — max credentialed AI calls per train file (default `3`, overridable by env)
+- `--hold-out <fraction>` — stratified hold-out fraction (default `0.25`)
+- `--result-file <path>` — append-only NDJSON iteration store (default `benchmarks/iterate-results.ndjson`)
+- `--report-file <path>` — also write JSON summary artifact
+- `--format <text|json>` — output format (default `text`)
+- `-h, --help` — show help
+
+Behavior:
+
+- Train split: files are iterated with accept/reject criteria.
+- AI runs use `PROMPTIMIZE_ITERATE_TEMPERATURE` (default `0.3`, clamped to `0.7`) to improve candidate diversity.
+- AI call budget is enforced before credentialed calls; once exhausted, iterations continue with local fallback candidates.
+- Hold-out split: files are score-only (never enhanced, never written to NDJSON store).
+- Retention scoring is always measured against each file's original body.
+- Text output includes per-file deltas, per-class trend aggregates, hold-out average, and NDJSON result-store path.
+- You can scope runs to a subset by passing one or more file and/or directory paths.
+
+Examples:
+
+```bash
+# local-first Phase A run
+bun run iterate -- --format text
+
+# produce JSON output + JSON artifact
+bun run iterate -- --max-iter 2 --format json --report-file ./artifacts/iterate-report.json
+
+# AI iterate smoke run on local OpenAI-compatible Qwen endpoint
+PROMPTIMIZE_BASE_URL=http://192.168.68.52:1234/v1 \
+PROMPTIMIZE_MODEL=qwen/qwen3.5-9b \
+PROMPTIMIZE_EVAL_MODEL=qwen/qwen3.5-9b \
+PROMPTIMIZE_ITERATE_MAX_AI_CALLS=2 \
+bun run iterate -- --ai --max-iter 2 --report-file ./artifacts/iterate-ai-smoke.json
+
+# AI starter-set run scoped to four fixtures
+PROMPTIMIZE_BASE_URL=http://192.168.68.52:1234/v1 \
+PROMPTIMIZE_MODEL=qwen/qwen3.5-9b \
+PROMPTIMIZE_EVAL_MODEL=qwen/qwen3.5-9b \
+bun run iterate -- --ai --max-iter 3 --max-ai-calls 2 \
+  --result-file ./artifacts/starter-run-001-ai.ndjson \
+  --report-file ./artifacts/starter-run-001-ai.json \
+  ./benchmarks/fixtures/guidance-skill-ghostty-config.md \
+  ./benchmarks/fixtures/reference-skill-opencode-agents.md \
+  ./benchmarks/fixtures/discipline-skill-dev-review-changes.md \
+  ./benchmarks/fixtures/guidance-skill-ghostty-themes.md
 ```
 
 ## Optimization pipeline (current implementation)
@@ -269,6 +327,12 @@ Supported vars:
 - `PROMPTIMIZE_AI_RETRIES`
   - Optional retry count after initial OpenAI-compatible optimize/eval attempt.
   - Default: `2` (3 total attempts).
+- `PROMPTIMIZE_ITERATE_TEMPERATURE`
+  - Optional temperature for iterate `--ai` optimize calls.
+  - Default: `0.3` in iterate mode, clamped to `0.0–0.7`.
+- `PROMPTIMIZE_ITERATE_MAX_AI_CALLS`
+  - Optional max credentialed AI calls per train file in iterate mode.
+  - Default: `3`.
 
 ## CI
 
@@ -308,6 +372,13 @@ promptimize/
     frontmatter.ts                 # split/join frontmatter helpers
     providers.ts                   # optimization provider abstraction
     eval.ts                        # benchmark/eval orchestration + formatting
+    iterate-cli.ts                 # iterative optimization CLI (Phase A)
+    iterate-engine.ts              # iteration loop controller
+    iterate-scorer.ts              # unified deterministic+rubric scoring
+    iterate-criteria.ts            # accept/reject criteria
+    iterate-budget.ts              # stopping logic (max iter/plateau/AI budget)
+    iterate-store.ts               # append-only NDJSON result store
+    iterate-corpus.ts              # deterministic stratified train/hold-out split
     eval-metrics.ts                # deterministic scoring metrics
     eval-judge.ts                  # local + credentialed rubric judges
     types.ts                       # shared types

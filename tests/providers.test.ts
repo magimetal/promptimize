@@ -85,9 +85,11 @@ describe("provider abstraction", () => {
 
     let capturedHeaders: HeadersInit | undefined;
     let capturedUrl = "";
+    let capturedBody = "";
     const mockFetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
       capturedUrl = String(input);
       capturedHeaders = init?.headers;
+      capturedBody = typeof init?.body === "string" ? init.body : "";
       return new Response(
         JSON.stringify({
           choices: [
@@ -114,6 +116,7 @@ describe("provider abstraction", () => {
     const headersRecord = toHeaderRecord(capturedHeaders);
     expect(headersRecord["Content-Type"]).toBe("application/json");
     expect(headersRecord.Authorization).toBeUndefined();
+    expect((JSON.parse(capturedBody) as { temperature: number }).temperature).toBe(0);
     expect(out).toBe("optimized markdown");
 
     delete process.env.PROMPTIMIZE_BASE_URL;
@@ -152,6 +155,34 @@ describe("provider abstraction", () => {
     } finally {
       delete process.env.PROMPTIMIZE_BASE_URL;
       delete process.env.PROMPTIMIZE_AI_RETRIES;
+    }
+  });
+
+  test("openai-compatible optimize call accepts custom temperature", async () => {
+    process.env.PROMPTIMIZE_BASE_URL = "http://localhost:1234/v1";
+
+    try {
+      let capturedBody = "";
+      const mockFetch = (async (_input: URL | RequestInfo, init?: RequestInit) => {
+        capturedBody = typeof init?.body === "string" ? init.body : "";
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "custom temp" } }],
+          }),
+          { status: 200 },
+        );
+      }) as unknown as typeof fetch;
+
+      const llmCall = createOpenAiOptimizeCall(mockFetch, { temperature: 0.4 });
+      await llmCall({
+        filePath: "/tmp/doc.md",
+        body: "source",
+        classification: "guidance",
+      });
+
+      expect((JSON.parse(capturedBody) as { temperature: number }).temperature).toBe(0.4);
+    } finally {
+      delete process.env.PROMPTIMIZE_BASE_URL;
     }
   });
 

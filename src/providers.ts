@@ -112,7 +112,16 @@ interface OptimizeLlmResponse {
   choices?: Array<{ message?: { content?: string } }>;
 }
 
-export function createOpenAiOptimizeCall(fetchImpl: typeof fetch = fetch): LlmCall {
+interface OpenAiOptimizeOptions {
+  temperature?: number;
+}
+
+export function createOpenAiOptimizeCall(
+  fetchImpl: typeof fetch = fetch,
+  options: OpenAiOptimizeOptions = {},
+): LlmCall {
+  const temperature = sanitizeTemperature(options.temperature ?? 0);
+
   return async (input) => {
     return runWithTimeoutAndRetry("OpenAI-compatible optimize call", async (signal) => {
       const response = await fetchImpl(`${resolveAiBaseUrl()}/chat/completions`, {
@@ -121,7 +130,7 @@ export function createOpenAiOptimizeCall(fetchImpl: typeof fetch = fetch): LlmCa
         signal,
         body: JSON.stringify({
           model: process.env.PROMPTIMIZE_MODEL || "gpt-4.1-mini",
-          temperature: 0,
+          temperature,
           messages: [
             {
               role: "system",
@@ -156,4 +165,20 @@ export function createOpenAiOptimizeCall(fetchImpl: typeof fetch = fetch): LlmCa
       return optimized;
     });
   };
+}
+
+function sanitizeTemperature(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  if (value < 0) {
+    return 0;
+  }
+
+  if (value > 0.7) {
+    return 0.7;
+  }
+
+  return value;
 }
